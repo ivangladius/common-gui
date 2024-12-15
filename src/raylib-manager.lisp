@@ -5,7 +5,7 @@
 (in-package #:raylib-manager)
 
 (defparameter *raylib-loaded* nil)
-(defparameter *project-root* (asdf:system-source-directory :hello-world))
+(defparameter *project-root* (asdf:system-source-directory :common-gui))
 (defparameter *project-raylib-dir* (merge-pathnames "raylib" *project-root*))
 
 (defun raylib-build ()
@@ -18,17 +18,16 @@
     (uiop:run-program 
      (format nil "bash -c 'cd ~a && ~a'" *project-raylib-dir* make-command) :output t)))
 
-
 (defun raylib-path ()
   (let ((raylib-path (first (iv-find :path *project-raylib-dir* :iname "*libraylib*"))))
     raylib-path))
 
 (defun raylib-load ()
   (unless (probe-file *project-raylib-dir*)
-    (error "cannot find raylib shared library, run (raylib-build)"))
+    (error "cannot find raylib directory\n, run: make build in a terminal in the project root"))
   (let ((path (raylib-path)))
     (unless path
-      (raylib-build))
+      (error "cannot find libraylib.so, run: make build"))
     (cffi:load-foreign-library path)
     (setf *raylib-loaded* t)))
 
@@ -37,6 +36,7 @@
 
 (defun raylib-loaded? ()
   *raylib-loaded*)
+
 
 (defun raylib-ensure-loaded ()
   (unless (raylib-loaded?)

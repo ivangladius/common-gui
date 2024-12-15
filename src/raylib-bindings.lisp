@@ -1,8 +1,10 @@
 
 (uiop:define-package :raylib-bindings
-  (:use :cl :cffi :raylib-manager :iv-utils :bordeaux-threads :safe-ds))
+  (:use :cl :cffi :raylib-manager :iv-utils :bordeaux-threads :safe-ds :safe-accessor))
 
 (in-package #:raylib-bindings)
+
+;;(raylib-manager::raylib-ensure-loaded)
 
 (raylib-manager::raylib-ensure-loaded)
 
@@ -40,6 +42,10 @@
 ;; void DrawRectangle(int posX, int posY, int width, int height, Color color);                        // Draw a color-filled rectangle
 (defcfun ("DrawRectangle" draw-rectangle) :void
   (posX :int) (posY :int) (width :int) (height :int) (color :long))
+
+;; void DrawRectangleGradientV(int posX, int posY, int width, int height, Color top, Color bottom);   // Draw a vertical-gradient-filled rectangle
+(defcfun ("DrawRectangleGradientV" draw-rectangle-gradientv) :void
+  (posX :int) (posY :int) (width :int) (height :int) (top :long) (bottom :long))
 
 ;; void DrawText(const char *text, int posX, int posY, int fontSize, Color color);       // Draw text (using default font)
 (defcfun ("DrawText" draw-text) :void
@@ -137,21 +143,23 @@
   (multiple-value-bind (x y) (get-mouse-position)
     (%clicked-container? x y container)))
 
-(defun container (x y width height color
-                  &key (callback nil) (callback-args nil)
-                    (scale 1.0) (elements nil) (relx nil) (rely nil))
-  (list :type :container :x x :y y :width width :height height :color color
+(defun container (&key (name nil) (x 0) (y 0) (width 0) (height 0) (color #xffffffff)
+                  (callback nil) (callback-args nil)
+                    (scale 1.0) (elements nil) (relx 0) (rely 0))
+  (when (or (= width 0) (= height 0))
+    (error "container cannot have empty or 0 width and height"))
+  (list :type :container :name name :x x :y y :width width :height height :color color
         :scale scale :elements (if (listp elements) elements (list elements))
         :relx relx :rely rely
         :callback callback
         :callback-args callback-args))
 
-(defun text (value relx rely font-size &optional (color #xffffffff))
-  (list :type :text :value value :relx relx :rely rely :font-size font-size :color color))
+(defun text (value &key (name nil) (relx 0) (rely 0) (font-size 15) (color #xffffffff))
+  (list :type :text :name name :value value :relx relx :rely rely :font-size font-size :color color))
 
-(defun draw-element (element &key (parent-container nil) (callback-queue nil) (clicked nil) (scale 1))
-  (let ((container-x (if parent-container (getf parent-container :x) 0))
-        (container-y (if parent-container (getf parent-container :y) 0)))
+(defun draw-element (element &key (parent-relx nil) (parent-rely nil) (parent-container nil) (callback-queue nil) (clicked nil) (scale 1))
+  (let ((container-x (or parent-relx (getf element :x)))
+        (container-y (or parent-rely (getf element :y))))
     (case (getf element :type)
       (:text
        (draw-text (getf element :value)
@@ -172,19 +180,22 @@
              (format t "pushed: ~a~%" (safe-ds::safe-queue-queue callback-queue))))
          ;; (funcall callback element)
          ;; (funcall callback callback-args)))) TODO: fix this either relx or x not both
-         (let ((relx (or (getf element :relx) 0))
-               (rely (or (getf element :rely) 0)))
-           (draw-rectangle (+ (getf element :x) relx container-x)
-                           (+ (getf element :y) rely container-y)
+	 (let ((newx (+ (getf element :relx) container-x))
+	       (newy (+ (getf element :rely) container-y)))
+           (draw-rectangle-gradientv newx
+                           newy
                            (getf element :width)
                            (getf element :height)
-                           (getf element :color))
+                           (getf element :color)
+			   #xff090909)
            (dolist (e (getf element :elements))
-             (draw-element e :parent-container element
-                             :clicked clicked
-                             :callback-queue callback-queue
-                             :scale (getf element :scale)))))))))
-
+	     (draw-element e
+			   :parent-relx newx
+			   :parent-rely newy
+			   :parent-container element
+			   :clicked clicked
+			   :callback-queue callback-queue
+			   :scale (getf element :scale)))))))))
 
 (defparameter *callback-container-prio* (safe-ds::make-queue))
 
@@ -203,24 +214,60 @@
       ;; (format t "clearing ~a~%" (safe-ds::safe-queue-queue callback-queue))
       (safe-ds::queue-clear callback-queue))))
 
+;; (defparameter *gui-elements*
+;;   (container
+;;    :x 0 :y 0 :width 800 :height 600 :color #xff141403
+;;    :callback #'(lambda (container)
+;;                  (setf (getf container :color) #xff0000ff))
+;;    ;; (format t  "you clicked me with args: ~a~%" container))
+;;    :callback-args :self
+;;    :elements
+;;    (list
+;;     (container
+;;      :color #xff443322
+;;      :relx 300 :rely 200
+;;      :width 200 :height 200
+;;      :callback #'(lambda (container)
+;;                    (setf (getf container :color) #xff00ff00))
+;;      :callback-args :parent
+;;      :elements
+;;      (list
+;; 	(text "username" :relx 30 :rely 20 :font-size 30 :color #xffa0fff0)
+;; 	(text "password" :relx 30 :rely 80 :font-size 30 :color #xffa0fff0)
+;;      )))))
+
+
+(defparameter *gui* (make-hash-table :test 'equal))
+(defparameter *gui-accessor* (create-safe-accessor *gui*))
+
 (defparameter *gui-elements*
   (container
-   50 50 800 600 #xff141403
-   :scale 1.0
-   :callback #'(lambda (container)
-                 (setf (getf container :color) #xff0000ff))
-   ;; (format t  "you clicked me with args: ~a~%" container))
-   :callback-args :self
+   :name "base"
+   :x 200 :y 80
+   :width 400 :height 400
    :elements
    (list
-    (text "username" 80 30 30 #xffa0fff0)
-    (text "password" 80 80 30 #xffa0fff0)
-    (container
-     0 0 50 50 #xfffa0000
-     :relx 100 :rely 100
-     :callback #'(lambda (container)
-                   (setf (getf container :color) #xff00ff00))
-     :callback-args :parent))))
+    (container :name "top" :width 200 :height 400 :color #xff010101)
+    (container :name "bottom" :width 150 :height 300 :color #xff069694)
+    (text "hello world" :name "title" :relx 0 :rely 0 :font-size 30 :color #xffA1A9ff)
+    )))
+
+(defun initialize-gui (gui-table root-element)
+  (setf (gethash (getf root-element :name) gui-table) root-element)
+  (dolist (elem (getf root-element :elements))
+    (setf (gethash (getf elem :name) gui-table) elem)
+    (if (eq (getf elem :type) :container)
+	(initialize-gui gui-table elem)))
+  gui-table)
+
+(defun change-color (table name color)
+  (with-lock-accessor *gui-accessor*
+      (let ((obj (gethash name table)))
+        (setf (getf obj :color) color))))
+
+(change-color *gui* "bottom" #xff000022)
+
+(initialize-gui *gui* *gui-elements*)
 
 
 (defun logic ()
@@ -236,5 +283,5 @@
 ;;(draw-text "hello" 200 200 80 #xffffffff))))
 
 (defun main()
-  (with-window (1600 1200 "hello")
+  (with-window (800 600 "hello")
     (logic)))

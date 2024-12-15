@@ -1,8 +1,8 @@
 
-(uiop:define-package hello-world
+(uiop:define-package common-gui
   (:use :cl :iv-utils))
 
-(in-package #:hello-world)
+(in-package #:common-gui)
 
 
 
