@@ -1,13 +1,17 @@
 
 (uiop:define-package :raylib-bindings
-  (:use :cl :cffi :raylib-manager :iv-utils :bordeaux-threads :safe-ds
-	:safe-accessor))
+  (:use :cl :cffi :raylib-manager))
+
 
 (in-package #:raylib-bindings)
+
+
+(ql:quickload :cffi-libffi)
 
 ;;(raylib-manager::raylib-ensure-loaded)
 
 (raylib-manager::raylib-ensure-loaded)
+
 
 
 (defcstruct Vector2
@@ -62,45 +66,6 @@
 ;; void CloseWindow(void);                                     // Close window and unload OpenG
 (defcfun ("CloseWindow" close-window) :void)
 
-(defun get-mouse-position ()
-  (let ((vector2-object (%get-mouse-position)))
-    (values (getf vector2-object 'x) (getf vector2-object 'y))))
-
-(ql:quickload :cffi-libffi)
-
-;; (values (foreign-slot-value vector2-object '(:struct vector2) 'x)
-;;         (foreign-slot-value vector2-object '(:struct vector2) 'y))))
-
-(defmacro with-window ((width height title) &body body)
-  `(progn
-     (init-window ,width ,height ,title)
-     (unwind-protect
-          (loop
-            :until (window-should-close)
-            :do (progn
-                  ,@body))
-       (close-window))))
-
-(defmacro with-drawing (&body body)
-  `(progn
-     (begin-drawing)
-     (progn ,@body)
-     (end-drawing)))
-
-(defparameter *main-id* nil)
-
-(defun start ()
-  (setf *main-id* (bt:make-thread #'(lambda () (main)))))
-
-(defun end ()
-  (unless (null *main-id*)
-    (bt:destroy-thread *main-id*)
-    (setf *main-id* nil)))
-
-(defun restart-main ()
-  (end)
-  (start))
-
 
 
 ;; (defun button-create (x y width height text font-size &optional color on-click)
@@ -129,185 +94,21 @@
 
 
 ;; TODO: ugly as fuck
-(defun %clicked-container? (mousex mousey container)
-  (format t "[~a, ~a]~%" mousex mousey)
-  (let ((relx (or (getf container :relx) 0))
-        (rely (or (getf container :rely) 0)))
-    (let ((x (+ (getf container :x) relx))
-          (y (+ (getf container :y) rely))
-          (width (getf container :width))
-          (height (getf container :height)))
-      (and (<= (- x 10 ) mousex) (<= mousex (+ x width 10))
-           (<= (- y 10) mousey) (<= mousey (+ y height 10))))))
+;; (defparameter *callback-container-prio* (safe-ds::make-queue))
 
-(defun clicked-container? (container)
-  (multiple-value-bind (x y) (get-mouse-position)
-    (%clicked-container? x y container)))
-
-(defun container (&key (name nil) (x 0) (y 0) (width 0) (height 0) (color #xffffffff)
-                  (callback nil) (callback-args nil)
-                    (scale 1.0) (elements nil) (relx 0) (rely 0))
-  (when (or (= width 0) (= height 0))
-    (error "container cannot have empty or 0 width and height"))
-  (list :type :container :name name :x x :y y :width width :height height :color color
-        :scale scale :elements (if (listp elements) elements (list elements))
-        :relx relx :rely rely
-        :callback callback
-        :callback-args callback-args))
-
-(defun text (value &key (name nil) (relx 0) (rely 0) (font-size 15) (color #xffffffff))
-  (list :type :text :name name :value value :relx relx :rely rely :font-size font-size :color color))
-
-(defun draw-element (element &key (parent-relx nil) (parent-rely nil) (parent-container nil) (callback-queue nil) (clicked nil) (scale 1))
-  (let ((container-x (or parent-relx (getf element :x)))
-        (container-y (or parent-rely (getf element :y))))
-    (case (getf element :type)
-      (:text
-       (draw-text (getf element :value)
-                  (+ (getf element :relx) container-x)
-                  (+ (getf element :rely) container-y)
-                  (round (* (getf element :font-size) scale))
-                  (getf element :color)))
-      (:container
-       (progn
-         (when (and clicked (clicked-container? element))
-           (let ((callback (getf element :callback))
-                 (callback-args (getf element :callback-args)))
-             (if (eql callback-args :self)
-                 (safe-ds::queue-push callback-queue (list callback element))
-                 (if (and parent-container (eql :parent (getf element :callback-args)))
-                     (safe-ds::queue-push callback-queue (list callback parent-container))
-                     (safe-ds::queue-push callback-queue (list callback callback-args))))
-             (format t "pushed: ~a~%" (safe-ds::safe-queue-queue callback-queue))))
-         ;; (funcall callback element)
-         ;; (funcall callback callback-args)))) TODO: fix this either relx or x not both
-	 (let ((newx (+ (getf element :relx) container-x))
-	       (newy (+ (getf element :rely) container-y)))
-           (draw-rectangle-gradientv newx
-                           newy
-                           (getf element :width)
-                           (getf element :height)
-                           (getf element :color)
-			   #xff090909)
-           (dolist (e (getf element :elements))
-	     (draw-element e
-			   :parent-relx newx
-			   :parent-rely newy
-			   :parent-container element
-			   :clicked clicked
-			   :callback-queue callback-queue
-			   :scale (getf element :scale)))))))))
-
-(defparameter *callback-container-prio* (safe-ds::make-queue))
-
-(declaim (optimize (debug 3) (safety 3) (speed 0)))
-(defun execute-callback (callback-queue)
-  "since we have container in container, if we click on the middle one
-   how do we know which one is clicked, since they overlap and share the same area
-   so we push fron a container which is a potential candidate, and then we take the front
-   thus we will have the most deep nested one"
-  (let* ((job (safe-ds::queue-front callback-queue)))
-    (when job
-      (let ((fun (car job))
-            (args (cadr job)))
-        ;; (print "executing...")
-        (funcall fun args))
-      ;; (format t "clearing ~a~%" (safe-ds::safe-queue-queue callback-queue))
-      (safe-ds::queue-clear callback-queue))))
-
-;; (defparameter *gui-elements*
-;;   (container
-;;    :x 0 :y 0 :width 800 :height 600 :color #xff141403
-;;    :callback #'(lambda (container)
-;;                  (setf (getf container :color) #xff0000ff))
-;;    ;; (format t  "you clicked me with args: ~a~%" container))
-;;    :callback-args :self
-;;    :elements
-;;    (list
-;;     (container
-;;      :color #xff443322
-;;      :relx 300 :rely 200
-;;      :width 200 :height 200
-;;      :callback #'(lambda (container)
-;;                    (setf (getf container :color) #xff00ff00))
-;;      :callback-args :parent
-;;      :elements
-;;      (list
-;; 	(text "username" :relx 30 :rely 20 :font-size 30 :color #xffa0fff0)
-;; 	(text "password" :relx 30 :rely 80 :font-size 30 :color #xffa0fff0)
-;;      )))))
+;; (declaim (optimize (debug 3) (safety 3) (speed 0)))
+;; (defun execute-callback (callback-queue)
+;;   "since we have container in container, if we click on the middle one
+;;    how do we know which one is clicked, since they overlap and share the same area
+;;    so we push fron a container which is a potential candidate, and then we take the front
+;;    thus we will have the most deep nested one"
+;;   (let* ((job (safe-ds::queue-front callback-queue)))
+;;     (when job
+;;       (let ((fun (car job))
+;;             (args (cadr job)))
+;;         ;; (print "executing...")
+;;         (funcall fun args))
+;;       ;; (format t "clearing ~a~%" (safe-ds::safe-queue-queue callback-queue))
+;;       (safe-ds::queue-clear callback-queue))))
 
 
-;; string (:name) -> GUI object (container, text, button ....) table
-;; (defparameter *gui* (make-hash-table :test 'equal))
-;; (defparameter *gui-accessor* (safe-accessor::create-safe-accessor *gui*))
-
-(defparameter *gui* (safe-accessor::create-safe-accessor
-		     (make-hash-table :test 'equal)))
-
-
-(defparameter *gui-elements*
-  (container
-   :name "base"
-   :x 200 :y 80
-   :width 400 :height 400
-   :elements
-   (list
-    (container :name "top" :width 200 :height 400 :color #xff010101)
-    (container :name "bottom" :width 150 :height 300 :color #xff069694)
-    (text "hello world" :name "title" :relx 0 :rely 0 :font-size 30 :color #xffA1A9ff)
-    )))
-
-(defun initialize-gui (safe-table elements)
-  (let ((table (safe-accessor::safe-accessor-obj safe-table)))
-    (setf (gethash (getf elements :name) table) elements)
-    (dolist (elem (getf elements :elements))
-      (setf (gethash (getf elem :name) table) elem)
-      (if (eq (getf elem :type) :container)
-	  (initialize-gui safe-table elem)))
-    table))
-
-
-(defun has-attribute (obj attribute)
-  (getf obj attribute))
-
-(defun change-element (safe-table &key (name nil) (attribute nil) (value nil))
-  (unless (and name attribute value)
-    (error "change-element: no attribute should be nil"))
-  (safe-accessor::with-lock safe-table
-    (let* ((table (safe-accessor::safe-accessor-obj safe-table))
-	   (obj (gethash name table)))
-      (unless (has-attribute obj attribute)
-	(error "element doesnt suggested attribute"))
-    (setf (getf obj attribute) value))))
-
-
-(change-element *gui* :name "title" :attribute :value :value "morning")
-
-;; (change-element *gui* :name "bottom" :attribute :color :value #xffffffff)
-
- ;;(change-color *gui* :name "top" :color #xff0fff00)
-
-;;(change-title *gui* :name "title" :value "friend")
-
-
-
-
-  
-
-(defun logic ()
-  (set-target-fps 60)
-  (initialize-gui *gui* *gui-elements*)
-  (with-drawing
-    (clear-background #x003300) ;; dark green
-    (let ((clicked-p (left-mouse-clicked?)))
-      (draw-element *gui-elements*
-                    :clicked clicked-p
-                    :callback-queue *callback-container-prio*))
-    (execute-callback *callback-container-prio*)))
-
-;;(draw-text "hello" 200 200 80 #xffffffff))))
-
-(defun main()
-  (with-window (800 600 "hello")
-    (logic)))
