@@ -1,6 +1,7 @@
 
 (uiop:define-package :raylib-bindings
-  (:use :cl :cffi :raylib-manager :iv-utils :bordeaux-threads :safe-ds :safe-accessor))
+  (:use :cl :cffi :raylib-manager :iv-utils :bordeaux-threads :safe-ds
+	:safe-accessor))
 
 (in-package #:raylib-bindings)
 
@@ -237,8 +238,13 @@
 ;;      )))))
 
 
-(defparameter *gui* (make-hash-table :test 'equal))
-(defparameter *gui-accessor* (create-safe-accessor *gui*))
+;; string (:name) -> GUI object (container, text, button ....) table
+;; (defparameter *gui* (make-hash-table :test 'equal))
+;; (defparameter *gui-accessor* (safe-accessor::create-safe-accessor *gui*))
+
+(defparameter *gui* (safe-accessor::create-safe-accessor
+		     (make-hash-table :test 'equal)))
+
 
 (defparameter *gui-elements*
   (container
@@ -252,26 +258,46 @@
     (text "hello world" :name "title" :relx 0 :rely 0 :font-size 30 :color #xffA1A9ff)
     )))
 
-(defun initialize-gui (gui-table root-element)
-  (setf (gethash (getf root-element :name) gui-table) root-element)
-  (dolist (elem (getf root-element :elements))
-    (setf (gethash (getf elem :name) gui-table) elem)
-    (if (eq (getf elem :type) :container)
-	(initialize-gui gui-table elem)))
-  gui-table)
+(defun initialize-gui (safe-table elements)
+  (let ((table (safe-accessor::safe-accessor-obj safe-table)))
+    (setf (gethash (getf elements :name) table) elements)
+    (dolist (elem (getf elements :elements))
+      (setf (gethash (getf elem :name) table) elem)
+      (if (eq (getf elem :type) :container)
+	  (initialize-gui safe-table elem)))
+    table))
 
-(defun change-color (table name color)
-  (with-lock-accessor *gui-accessor*
-      (let ((obj (gethash name table)))
-        (setf (getf obj :color) color))))
 
-(change-color *gui* "bottom" #xff000022)
+(defun has-attribute (obj attribute)
+  (getf obj attribute))
 
-(initialize-gui *gui* *gui-elements*)
+(defun change-element (safe-table &key (name nil) (attribute nil) (value nil))
+  (unless (and name attribute value)
+    (error "change-element: no attribute should be nil"))
+  (safe-accessor::with-lock safe-table
+    (let* ((table (safe-accessor::safe-accessor-obj safe-table))
+	   (obj (gethash name table)))
+      (unless (has-attribute obj attribute)
+	(error "element doesnt suggested attribute"))
+    (setf (getf obj attribute) value))))
 
+
+(change-element *gui* :name "title" :attribute :value :value "morning")
+
+;; (change-element *gui* :name "bottom" :attribute :color :value #xffffffff)
+
+ ;;(change-color *gui* :name "top" :color #xff0fff00)
+
+;;(change-title *gui* :name "title" :value "friend")
+
+
+
+
+  
 
 (defun logic ()
   (set-target-fps 60)
+  (initialize-gui *gui* *gui-elements*)
   (with-drawing
     (clear-background #x003300) ;; dark green
     (let ((clicked-p (left-mouse-clicked?)))
