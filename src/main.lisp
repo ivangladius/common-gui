@@ -3,73 +3,199 @@
   (:use :cl :iv-utils
 	:bordeaux-threads
 	:raylib-bindings
+	:local-time
 	:ui))
 
 (in-package #:common-gui)
 
-(defparameter *gui-tree*
-  (ui::container
-   :name "bottom"
-   :callback #'(lambda () (uiop:run-program "nautilus --new-window &"))
-   :width 400 :height 400
-   :elements
-   (list
-    (ui::container
-     :name "middle"
-     :callback #'(lambda () (uiop:run-program "chromium --new-window&"))
-     :relx 100 :rely 100 :width 200 :height 400 :color #xff010101)
-    (ui::container
-     :name "top"
-     :callback #'(lambda () (uiop:run-program "alacritty &"))
-     :width 150 :height 300 :color #xff069694)
-    ;;(ui::text "hello world" :name "title" :relx 0 :rely 0 :font-size 30 :color #xffA1A9ff)
-    )))
-
-
 
 ;;(change-element *gui* :name "title" :attribute :value :value "hello")
 
-(declaim (optimize (debug 3)))
+;; (defun timer-text (gui)
+;;     (let* ((sec (local-time:timestamp-second (local-time:now)))
+;; 	   (fmt (format nil "~a" sec)))
+;;       (ui::change-element gui :name "title" :attribute :value :value fmt)
+;;       (ui::change-element gui :name "title" :attribute :font-size :value 80)
+;;       (ui::change-element gui :name "title" :attribute :color
+;; 			      :value (if (= (mod sec 5) 0)
+;; 					 #xff00ff00
+;; 					 #xffffff00))
+;;       (ui::change-element gui :name "title" :attribute :relx :value 200)
+;;       (ui::change-element gui :name "title" :attribute :rely :value 200)))
 
-(defmacro with-ui-loop (&body body)
-  `(progn
-     (raylib-bindings::set-target-fps 60)
-     (let ((ui (ui::ui-create *gui-tree*)))
-       (ui::with-drawing
-	 (raylib-bindings::clear-background #x003300) ;; dark green
-	 (let* ((clicked-p (raylib-bindings::left-mouse-clicked?))
-		(name-table (ui::ui-safe-name-table ui))
-		(event-queue (ui::ui-safe-event-queue ui)))
-	   (ui::draw-elements (ui::ui-gui ui)
-			      :clicked clicked-p
-			      :callback-queue event-queue)
-	   (progn
-	     ,@body)
-	   (let ((ev (safe-ds::queue-front event-queue)))
-	     (when ev
-	       (ui::execute-callback name-table ev)
-	       (safe-ds::queue-clear event-queue))))))))
-
-(defun logic ()
-  (with-ui-loop
-    (uiop:run-program "alacritty&")))
-	
-      ;; (if element-name
-      ;; 	  (format t "executing: ~a~%" element-name)
-      ;; 	  (format t "EMPTYYY" element-name))
-
-      ;;(print (safe-ds::safe-queue-queue (ui::ui-safe-event-queue ui)))
-      ;;(execute-callback *callback-container-prio*)
-      ;; (let ((front (safe-ds::queue-front event-queue)))
-      ;; 	(when front
-      ;; 	  (format t "taking ~a~%" front)))
+(defun timer-second (ui &key name)
+  (unless name
+    (error "time-second: name cannot be nil"))
+  (let* ((sec (local-time:timestamp-second (local-time:now)))
+	 (fmt (format nil "~a" sec)))
+    (ui::change-element
+     (ui::ui-safe-name-table ui)
+     :name name
+     :attributes
+     (list
+      :value fmt
+      :font-size 50
+      :color (if (= (mod sec 2) 0)
+		 #xff00ff00
+		 #xffffff00)
       ))))
 
-(defun main()
-  (ui::with-window (800 600 "hello")
-    (logic)))
+(defun wild-background (ui &key name)
+  (unless name
+    (error "time-second: name cannot be nil"))
+  (let* ((table (ui::ui-safe-name-table ui))
+	 (obj (ui::get-element table :name name))
+	(curr-color (getf obj :color)))
+    (ui::change-element
+     table
+     :name name
+     :attributes
+     (list
+      :color (+ curr-color 1)))
+    ;; (ui::change-element
+    ;;  gui
+    ;;  :name "color-value"
+    ;;  :attribute :value
+    ;;  :value (format nil "~a" curr-color))
+    ))
+
+;; (defun colliding-moving-cube (ui field &key name)
+;;   (unless name
+;;     (error "time-second: name cannot be nil"))
+;;   (let* ((table (ui::ui-safe-name-table ui))
+;; 	 (obj (ui::get-element table :name name))
+;; 	 (cont (getf obj :container))
+;; 	 (direction-factor (getf obj :direction-factor))
+
+;; 	 (posx (or (getf cont :relx) 0))
+;; 	 (posy (or (getf cont :rely) 0))
+;; 	 (width (or (getf cont :width) 0))
+;; 	 (height (or (getf cont :height) 0)))
+;;     (cond
+;;       ((< (ui::ui-width ui) (+ posx width)) (setf (getf cont :direction-factor)
+;; 						  (* direction-factor -1)))
+;;       ((<= posx 0) (setf (getf cont :direction-factor)
+;; 						  (* direction-factor -1)))
+;;       ((<= (ui::ui-height ui) (+ posy height)) (setf (getf cont :direction-factor)
+;; 						  (* direction-factor -1)))
+;;       ((<= posy 0) (setf *factory* (setf (getf cont :direction-factor)
+;; 					 (* direction-factor -1)))))))
+    
+    ;; (cond
+    ;;   ((< (ui::ui-width ui) (+ posx width)) (setf *factorx* (* *factorx* -1)))
+    ;;   ((<= posx 0) (setf *factorx* (* *factorx* -1)))
+    ;;   ((<= (ui::ui-height ui) (+ posy height)) (setf *factory* (* *factory* -1)))
+    ;;   ((<= posy 0) (setf *factory* (* *factory* -1))))
+    ;; (format t "[~a ~a ~a ~a]~%" posx posy *factorx* *factory*)
+    ;; (ui::change-element
+    ;;  table
+    ;;  :name "moving"
+    ;;  :attributes
+    ;;  (list
+    ;;   :relx (+ posx *factorx*)
+    ;;   :rely (+ posy *factory*)
+    ;;   ))))
 
 
+(defparameter *factorx* 1)
+(defparameter *factory* 10)
+
+(defun moving-cube (ui &key name)
+  (unless name
+    (error "time-second: name cannot be nil"))
+  (let* ((table (ui::ui-safe-name-table ui))
+	 (obj (ui::get-element table :name name))
+	 (posx (or (getf obj :relx) 0))
+	 (posy (or (getf obj :rely) 0))
+	 (width (or (getf obj :width) 0))
+	 (height (or (getf obj :height) 0)))
+    (cond
+      ((< (ui::ui-width ui) (+ posx width)) (setf *factorx* (* *factorx* -1)))
+      ((<= posx 0) (setf *factorx* (* *factorx* -1)))
+      ((<= (ui::ui-height ui) (+ posy height)) (setf *factory* (* *factory* -1)))
+      ((<= posy 0) (setf *factory* (* *factory* -1))))
+    (format t "[~a ~a ~a ~a]~%" posx posy *factorx* *factory*)
+    (ui::change-element
+     table
+     :name name
+     :attributes
+     (list
+      :relx (+ posx *factorx*)
+      :rely (+ posy *factory*)
+      ))))
+
+;; (defparameter *gui-tree*
+;;   (ui::container
+;;    :name "base"
+;;    :width 800 :height 600
+;;    :color #xff399231
+;;    :elements
+;;    (list
+;;     (ui::moving-container
+;;      :name "cube1"
+;;      :width 100 :height 100 
+;;      :relx 280 :rely 150
+;;      :color #xff040302
+;;      :elements
+;;      (list
+;;       (ui::text :name "cube1-text" :value "" :color #xffff0ff0
+;; 		:relx 25 
+;; 		:rely 25 
+;; 		:font-size 30)))
+;;     (ui::moving-container
+;;      :name "cube2"
+;;      :width 100 :height 100 
+;;      :relx 100 :rely 20
+;;      :color #xff04f302
+;;      :elements
+;;      (list
+;;       (ui::text :name "cube2-text" :value "" :color #xff00ff00
+;; 		:relx 25 
+;; 		:rely 25 
+;; 		:font-size 30)))
+
+;;     (ui::moving-container
+;;      :name "cube3"
+;;      :width 100 :height 100 
+;;      :relx 480 :rely 150
+;;      :color #xfff40000
+;;      :elements
+;;      (list
+;;       (ui::text :name "cube3-text" :value "" :color #xff00ff00
+;; 		:relx 25 
+;; 		:rely 25 
+;; 		:font-size 30))))))
+
+(defparameter *gui-tree*
+  (ui::container
+   :name "base"
+   :width 800 :height 600
+   :color #xff399231
+   :elements
+   (list
+    (ui::container
+	 :name "cube1"
+	 :width 100 :height 100 
+	 :relx 180 :rely 250
+	 :color #xff040302)
+    :elements
+    (list
+      (ui::text :name "cube1-text" :value "asdf" :color #xffff0ff0
+		:relx 25 
+		:rely 25 
+		:font-size 30)))))
+
+  
+(defun main ()
+  (ui::with-ui-loop ((800 600 "Hello" *gui-tree*) ui)
+    (logic ui)))
+
+(defun logic (gui)
+  (wild-background gui :name "base")
+  (wild-background gui :name "cube1")
+  )
+
+      
 
 (defparameter *main-id* nil)
 

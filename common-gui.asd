@@ -3,7 +3,7 @@
   :version "0.0.1"
   :author "Maximilian Ivan Filipov"
   :license ""
-  :depends-on ("cffi" "str" "bordeaux-threads" "cffi-libffi")
+  :depends-on ("cffi" "str" "bordeaux-threads" "cffi-libffi" "local-time")
   :components ((:module "src"
                 :components
                 ((:file "unix-utils")
