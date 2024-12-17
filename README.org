@@ -3,5 +3,5 @@
 ** Usage
 The GUI framework for common lisp you waited for
 
-** Installation
+**** Installation
 
