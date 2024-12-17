@@ -1,7 +1,7 @@
-* common-gui
-
-** Usage
+** common-gui
 The GUI framework for common lisp you waited for
 
-**** Installation
+** why ?
+We abuse the repl power to instantly compile or evaluate code on the fly to see
+the graphical changes immediatly, without restarting, which allows for *super fast GUI development*.
 
