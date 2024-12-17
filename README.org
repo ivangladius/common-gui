@@ -1,5 +1,7 @@
-* Hello-World 
+* common-gui
 
 ** Usage
+The GUI framework for common lisp you waited for
 
 ** Installation
+
