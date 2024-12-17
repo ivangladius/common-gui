@@ -3,6 +3,7 @@
   (:use :cl
    :iv-utils
 	:bordeaux-threads
+	:fmt
    :safe-ds
 	:safe-accessor
    :raylib-bindings))
@@ -32,12 +33,15 @@
 
 
 (defun ui-initialize (safe-table elements)
+  ;; get root element
   (let ((table (safe-accessor::safe-accessor-obj safe-table)))
     (setf (gethash (getf elements :name) table) elements)
+    ;; iterate trough child elements recursively
     (dolist (elem (getf elements :elements))
       (setf (gethash (getf elem :name) table) elem)
-      (if (eq (getf elem :type) :container)
-	  (ui-initialize safe-table elem)))
+      (case (getf elem :type)
+	(:container (ui-initialize safe-table elem))
+	(:edit (ui-initialize safe-table (getf elem :container)))))
     table))
 
 (defun get-mouse-position ()
@@ -89,22 +93,25 @@
   (list :type :container :name name :x x :y y :width width :height height :color color
         :scale scale :elements (if (listp elements) elements (list elements))
         :relx relx :rely rely
+	:focused? nil
         :callback callback
         :callback-args callback-args))
 
-(defun text (&key (value "") (name nil) (relx 0) (rely 0) (font-size 15) (color #xffffffff))
+(defun text (&key (value "") (name nil) (relx 0) (rely 0) (font-size 20) (color #xffffffff))
   (list :type :text :name name :value value :relx relx :rely rely :font-size font-size :color color))
 
 (defun edit (&key (hint "") (container-name nil) (text-name)
 		  (width 0) (height 0)
 	       (container-relx 0) (container-rely 0) (text-relx 0) (text-rely 0)
-	       (font-size 15) (container-color #xffffffff) (text-color #xff000000))
+	       (font-size 20) (container-color #xffffffff) (text-color #xff000000))
   (unless (and width height)
     (error "edit: width or height cannot be 0"))
   (list
-   :container (container :name container-name :width width :height height :relx container-relx :rely container-rely :color container-color)
-   :text (text :name text-name :value hint :relx text-relx :rely text-rely :font-size font-size :color text-color)
-   ))
+   :type :edit
+   :container (container :name container-name :width width :height height :relx container-relx :rely container-rely :color container-color
+			 :elements
+			 (list
+			  (text :name text-name :value hint :relx text-relx :rely text-rely :font-size font-size :color text-color)))))
 
 (defun moving-container (&key (direction-factor 1) (name nil) (width nil) (height 0)
 			   (relx 0) (rely 0) (color #xff000000) (elements nil))
@@ -131,8 +138,16 @@
 			:clicked clicked
 			:callback-queue callback-queue
 			:scale (getf element :scale))))
+      (:edit
+       (progn
+	 (draw-elements (getf element :container)
+			:parent-container element
+			:clicked clicked
+			:callback-queue callback-queue
+			:scale (getf element :scale))))
       (:container
        (progn
+	 ;; TODO: need ui object to set focus? to t on click, IMPORTANT
 	 (when (and clicked (clicked-container? element))
 	   (safe-ds::queue-push-new callback-queue (getf element :name)) 
 	   (format t "pushed: ~a~%" (safe-ds::safe-queue-queue callback-queue))))
@@ -161,7 +176,11 @@
 (defun get-element (safe-table &key (name nil))
   (unless name
     (error "get-element: name is nil"))
-  (gethash name (safe-accessor::safe-accessor-obj safe-table)))
+  (let ((obj (gethash name (safe-accessor::safe-accessor-obj safe-table))))
+      (unless obj
+	(fmt::error-fmt ":name ~a not found in table~%" name)
+	nil)
+    obj))
 
 (defun change-element (safe-table &key (name nil)
 				    (attribute nil) (value nil) (attributes nil))
@@ -177,7 +196,6 @@
 		:while (and attr val)
 		:do (setf (getf obj attr) val)))
       (setf (getf obj attribute) value))))
-
 
 (declaim (optimize (debug 3)))
 (defun execute-callback (ui-safe-name-table element-name)

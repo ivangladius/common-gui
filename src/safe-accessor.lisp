@@ -17,4 +17,5 @@
 (defmacro with-lock (accessor &body body)
   `(let ((lock (safe-accessor-mutex ,accessor)))
        (bt:with-lock-held (lock)
-	 (progn ,@body))))
+	 (unwind-protect
+	     (progn ,@body)))))

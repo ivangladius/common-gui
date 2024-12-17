@@ -7,11 +7,13 @@
   :components ((:module "src"
                 :components
                 ((:file "unix-utils")
+		 (:file "format-utils")
                  (:file "safe-queue")
                  (:file "safe-accessor")
                  (:file "raylib-manager")
                  (:file "raylib-bindings")
 		 (:file "ui")
+		 (:file "user")
                  (:file "main"))))
   :description ""
   :in-order-to ((test-op (test-op "common-gui/tests"))))
